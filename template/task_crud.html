@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard | Product Manager</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Product Manager</h1>
+      <div>
+        <button id="logoutBtn">Logout</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="products">
+        <h2>🛒 Product Management</h2>
+        <form id="productForm">
+          <input
+            type="text"
+            id="productName"
+            placeholder="Product Name"
+            required
+          />
+          <input type="number" id="productPrice" placeholder="Price" required />
+          <input type="text" id="productDesc" placeholder="Description" />
+          <button type="submit">Add Product</button>
+        </form>
+
+        <div id="productList"></div>
+      </section>
+
+      <section class="chat">
+        <h2>🤖 AI Agent</h2>
+        <div class="chat-box" id="chat-box"></div>
+        <div class="input-area">
+          <textarea
+            id="prompt"
+            placeholder="Ask something..."
+            rows="2"
+          ></textarea>
+          <button id="sendBtn" type="button">Send</button>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      (function () {
+        // Logout clears cookie by server? We just navigate to login page
+        const logoutBtn = document.getElementById("logoutBtn");
+        if (logoutBtn) {
+          logoutBtn.addEventListener("click", function () {
+            window.location.href = "/login";
+          });
+        }
+
+        // Products
+        const productForm = document.getElementById("productForm");
+        const productList = document.getElementById("productList");
+        async function loadProducts() {
+          const res = await fetch("/products/", { credentials: "include" });
+          if (!res.ok) {
+            if (res.status === 401) window.location.href = "/login";
+            return;
+          }
+          const data = await res.json();
+          const items = Array.isArray(data) ? data : data.products || [];
+          productList.innerHTML = items
+            .map(
+              (p) => `
+          <div class="product-item">
+            <span>${p.name} - $${p.price}</span>
+            <div>
+              <button data-id="${p.id}" class="delete-btn">🗑️</button>
+            </div>
+          </div>
+        `
+            )
+            .join("");
+
+          Array.from(document.getElementsByClassName("delete-btn")).forEach(
+            (btn) => {
+              btn.addEventListener("click", async function () {
+                const id = this.getAttribute("data-id");
+                const delRes = await fetch(`/products/${id}`, {
+                  method: "DELETE",
+                  credentials: "include",
+                });
+                if (delRes.ok) loadProducts();
+              });
+            }
+          );
+        }
+
+        if (productForm) {
+          productForm.addEventListener("submit", async function (e) {
+            e.preventDefault();
+            const payload = {
+              name: document.getElementById("productName").value.trim(),
+              price: parseFloat(document.getElementById("productPrice").value),
+              description: document.getElementById("productDesc").value.trim(),
+            };
+            const res = await fetch("/products/", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify(payload),
+            });
+            if (res.ok) {
+              productForm.reset();
+              loadProducts();
+            } else if (res.status === 401) {
+              window.location.href = "/login";
+            }
+          });
+          loadProducts();
+        }
+
+        // AI chat
+        const chatBox = document.getElementById("chat-box");
+        const promptInput = document.getElementById("prompt");
+        const sendBtn = document.getElementById("sendBtn");
+        function appendMessage(text, role) {
+          const el = document.createElement("div");
+          el.className = `message ${role}`;
+          el.textContent = text;
+          chatBox.appendChild(el);
+          chatBox.scrollTop = chatBox.scrollHeight;
+        }
+        async function sendMessage() {
+          const prompt = (promptInput.value || "").trim();
+          if (!prompt) return;
+          appendMessage(prompt, "user");
+          promptInput.value = "";
+          const loader = document.createElement("div");
+          loader.className = "loader";
+          chatBox.appendChild(loader);
+          try {
+            const res = await fetch("/ai_agent/api/ai/agent", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ prompt }),
+            });
+            const data = await res.json().catch(() => ({}));
+            loader.remove();
+            appendMessage(data.reply || data.response || "No reply", "ai");
+          } catch (e) {
+            loader.remove();
+            appendMessage("Network error", "ai");
+          }
+        }
+        if (sendBtn) sendBtn.addEventListener("click", sendMessage);
+      })();
+    </script>
+  </body>
+</html>
